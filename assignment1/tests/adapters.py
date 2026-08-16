@@ -15,6 +15,14 @@ from cs336_basics.Embedding import Embedding
 from cs336_basics.RMSnorm import RMSNorm
 from cs336_basics.silu import silu
 from cs336_basics.softmax import softmax
+from cs336_basics.RoPE import RoPE
+from cs336_basics.SwiGLU import SwiGLU
+from cs336_basics.scaled_dot_product_attention import scaled_dot_product_attention
+from cs336_basics.multihead_self_attention import multihead_self_attention
+from cs336_basics.multihead_self_attention_with_rope import multihead_self_attention_with_rope
+from cs336_basics.cross_entropy import cross_entropy
+from cs336_basics.TransformerBlock import TransformerBlock
+from cs336_basics.TransformerLM import TransformerLM
 
 def run_linear(
     d_in: int,
@@ -38,8 +46,6 @@ def run_linear(
     linear.load_state_dict({"weight": weights})
     return linear(in_features)
     
-
-
 def run_embedding(
     vocab_size: int,
     d_model: int,
@@ -65,8 +71,6 @@ def run_embedding(
 
     return embedding(token_ids)
     
-
-
 def run_swiglu(
     d_model: int,
     d_ff: int,
@@ -88,16 +92,17 @@ def run_swiglu(
     Returns:
         Float[Tensor, "... d_model"]: 与输入 embedding 同形状的输出 embedding。
     """
-    # 示例：
-    # 若你的 state dict 键名一致，可用 `load_state_dict()`
-    # swiglu.load_state_dict(weights)
-    # 也可以手动赋值权重
-    # swiglu.w1.weight.data = w1_weight
-    # swiglu.w2.weight.data = w2_weight
-    # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    # 1. 初始化SwiGLU模块
+    swiglu = SwiGLU(d_model=d_model, d_ff=d_ff)
 
+    # 2. 手动覆盖权重（Linear.weight 形状正好是 [out_dim, in_dim] 和传入一致）
+    swiglu.w1.weight.data = w1_weight
+    swiglu.w2.weight.data = w2_weight
+    swiglu.w3.weight.data = w3_weight
 
+    # 3. 前向计算并返回结果
+    return swiglu(in_features)
+    
 def run_scaled_dot_product_attention(
     Q: Float[Tensor, " ... queries d_k"],
     K: Float[Tensor, " ... keys d_k"],
@@ -116,8 +121,7 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: SDPA 的输出
     """
-    raise NotImplementedError
-
+    return scaled_dot_product_attention(Q,K,V,mask)
 
 def run_multihead_self_attention(
     d_model: int,
@@ -148,8 +152,16 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_model"]: 使用给定 QKV 投影权重与输入特征，
         运行你的优化批量多头注意力后的输出张量。
     """
-    raise NotImplementedError
-
+    attention = multihead_self_attention(
+        d_model=d_model,
+        num_heads=num_heads,
+    )
+    with torch.no_grad():
+        attention.q_proj.weight.copy_(q_proj_weight)
+        attention.k_proj.weight.copy_(k_proj_weight)
+        attention.v_proj.weight.copy_(v_proj_weight)
+        attention.output_proj.weight.copy_(o_proj_weight)
+    return attention(in_features)
 
 def run_multihead_self_attention_with_rope(
     d_model: int,
@@ -186,8 +198,18 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_model"]: 使用给定 QKV 投影权重与输入特征，
         运行你的优化批量多头注意力后的输出张量。
     """
-    raise NotImplementedError
-
+    attention = multihead_self_attention_with_rope(
+        d_model=d_model,
+        num_heads=num_heads,
+        theta=theta,
+        max_seq_len=max_seq_len,
+    )
+    with torch.no_grad():
+        attention.q_proj.weight.copy_(q_proj_weight)
+        attention.k_proj.weight.copy_(k_proj_weight)
+        attention.v_proj.weight.copy_(v_proj_weight)
+        attention.output_proj.weight.copy_(o_proj_weight)
+    return attention(in_features, token_positions)
 
 def run_rope(
     d_k: int,
@@ -208,8 +230,9 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: 施加 RoPE 后的张量。
     """
-    raise NotImplementedError
 
+    rope = RoPE(theta,d_k,max_seq_len)
+    return rope(in_query_or_key,token_positions)
 
 def run_transformer_block(
     d_model: int,
@@ -277,8 +300,15 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"]：在输入特征上运行
         带 RoPE 的 Transformer block 后的输出。
     """
-    raise NotImplementedError
-
+    block = TransformerBlock(
+        d_model=d_model,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        max_seq_len=max_seq_len,
+        theta=theta,
+    )
+    block.load_state_dict(weights)
+    return block(in_features)
 
 def run_transformer_lm(
     vocab_size: int,
@@ -356,8 +386,17 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: 每个 token 的
         未归一化下一词分布预测。
     """
-    raise NotImplementedError
-
+    model = TransformerLM(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        d_model=d_model,
+        num_layers=num_layers,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        rope_theta=rope_theta,
+    )
+    model.load_state_dict(weights)
+    return model(in_indices)
 
 def run_rmsnorm(
     d_model: int,
@@ -384,7 +423,6 @@ def run_rmsnorm(
         rmsnorm.weight.copy_(weights)
     return rmsnorm(in_features)
 
-
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
     """给定输入张量，返回对每个元素施加 SiLU 后的输出。
 
@@ -395,7 +433,6 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: 与 `in_features` 同形状，为对每个元素施加 SiLU 的结果。
     """
     return silu(in_features)
-
 
 def run_get_batch(
     dataset: npt.NDArray, batch_size: int, context_length: int, device: str
@@ -417,7 +454,6 @@ def run_get_batch(
     """
     raise NotImplementedError
 
-
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
     """
     给定输入张量，返回在指定 `dim` 上做 softmax 的结果。
@@ -431,7 +467,6 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         softmax 归一化后的结果。
     """
     return softmax(in_features,dim)
-
 
 def run_cross_entropy(
     inputs: Float[Tensor, " batch_size vocab_size"], targets: Int[Tensor, " batch_size"]
@@ -447,8 +482,7 @@ def run_cross_entropy(
     Returns:
         Float[Tensor, ""]: 各样本的平均交叉熵损失。
     """
-    raise NotImplementedError
-
+    return cross_entropy(inputs,targets)
 
 def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
     """给定一组参数，将其梯度整体裁剪，使 L2 范数至多为 max_l2_norm。
@@ -461,13 +495,11 @@ def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm:
     """
     raise NotImplementedError
 
-
 def get_adamw_cls() -> Any:
     """
     返回一个实现了 AdamW 的 torch.optim.Optimizer 类。
     """
     raise NotImplementedError
-
 
 def run_get_lr_cosine_schedule(
     it: int,
@@ -492,7 +524,6 @@ def run_get_lr_cosine_schedule(
     """
     raise NotImplementedError
 
-
 def run_save_checkpoint(
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
@@ -509,7 +540,6 @@ def run_save_checkpoint(
         out (str | os.PathLike | BinaryIO | IO[bytes]): 用于写入模型、优化器与迭代次数的路径或类文件对象。
     """
     raise NotImplementedError
-
 
 def run_load_checkpoint(
     src: str | os.PathLike | BinaryIO | IO[bytes],
@@ -528,7 +558,6 @@ def run_load_checkpoint(
         int: 此前序列化的迭代次数。
     """
     raise NotImplementedError
-
 
 def get_tokenizer(
     vocab: dict[int, bytes],
@@ -552,8 +581,6 @@ def get_tokenizer(
     """
     return tokenizer(vocab, merges, special_tokens)
     
-
-
 def run_train_bpe(
     input_path: str | os.PathLike,
     vocab_size: int,
