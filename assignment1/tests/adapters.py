@@ -23,6 +23,14 @@ from cs336_basics.multihead_self_attention_with_rope import multihead_self_atten
 from cs336_basics.cross_entropy import cross_entropy
 from cs336_basics.TransformerBlock import TransformerBlock
 from cs336_basics.TransformerLM import TransformerLM
+from cs336_basics.adamw import AdamW
+from cs336_basics.training import (
+    get_batch,
+    get_lr_cosine_schedule,
+    gradient_clipping,
+    load_checkpoint,
+    save_checkpoint,
+)
 
 def run_linear(
     d_in: int,
@@ -452,7 +460,12 @@ def run_get_batch(
         形状均为 (batch_size, context_length) 的 torch.LongTensor 二元组。
         第一项是采样的输入序列，第二项是对应的语言建模标签。
     """
-    raise NotImplementedError
+    return get_batch(
+        dataset=dataset,
+        batch_size=batch_size,
+        context_length=context_length,
+        device=device,
+    )
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
     """
@@ -493,13 +506,13 @@ def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm:
 
     应原地修改参数的梯度（parameter.grad）。
     """
-    raise NotImplementedError
+    gradient_clipping(parameters, max_l2_norm)
 
 def get_adamw_cls() -> Any:
     """
     返回一个实现了 AdamW 的 torch.optim.Optimizer 类。
     """
-    raise NotImplementedError
+    return AdamW
 
 def run_get_lr_cosine_schedule(
     it: int,
@@ -522,7 +535,13 @@ def run_get_lr_cosine_schedule(
     Returns:
         该日程下指定迭代的学习率。
     """
-    raise NotImplementedError
+    return get_lr_cosine_schedule(
+        it=it,
+        max_learning_rate=max_learning_rate,
+        min_learning_rate=min_learning_rate,
+        warmup_iters=warmup_iters,
+        cosine_cycle_iters=cosine_cycle_iters,
+    )
 
 def run_save_checkpoint(
     model: torch.nn.Module,
@@ -539,7 +558,7 @@ def run_save_checkpoint(
         iteration (int): 序列化该值，表示已完成的训练迭代次数。
         out (str | os.PathLike | BinaryIO | IO[bytes]): 用于写入模型、优化器与迭代次数的路径或类文件对象。
     """
-    raise NotImplementedError
+    save_checkpoint(model, optimizer, iteration, out)
 
 def run_load_checkpoint(
     src: str | os.PathLike | BinaryIO | IO[bytes],
@@ -557,7 +576,7 @@ def run_load_checkpoint(
     Returns:
         int: 此前序列化的迭代次数。
     """
-    raise NotImplementedError
+    return load_checkpoint(src, model, optimizer)
 
 def get_tokenizer(
     vocab: dict[int, bytes],

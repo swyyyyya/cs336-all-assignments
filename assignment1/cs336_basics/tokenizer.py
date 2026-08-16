@@ -1,5 +1,29 @@
-from typing import Iterator, Optional
+from collections.abc import Iterator
+import json
 import regex
+
+def bytes_to_unicode() -> dict[int, str]:
+    """Map every byte (0-255) to a unique printable unicode string.
+
+    This is the standard GPT-2 remapping: bytes that are already printable
+    keep their identity, while the rest are shifted by 256. The crucial
+    property is that no remapped token ever contains an ASCII space, so
+    space-separated serialization of tokens is unambiguous.
+    """
+    bs = (
+        list(range(ord("!"), ord("~") + 1))
+        + list(range(ord("¡"), ord("¬") + 1))
+        + list(range(ord("®"), ord("ÿ") + 1))
+    )
+    cs = bs[:]
+    n = 0
+    for b in range(2**8):
+        if b not in bs:
+            bs.append(b)
+            cs.append(2**8 + n)
+            n += 1
+    return dict(zip(bs, [chr(c) for c in cs]))
+
 
 class tokenizer:
     # 预分词正则
@@ -25,6 +49,40 @@ class tokenizer:
         # 构建merge优先级映射
         self.merge_ranks: dict[tuple[bytes, bytes], int] = {pair:i for i,pair in enumerate(merges)}
         self.str_to_id: dict[str, int] = {s: self.bytes_to_id[s.encode("utf-8")] for s in self.special_tokens}
+
+    @classmethod
+    def from_files(
+        cls,
+        vocab_path: str,
+        merges_path: str,
+        special_tokens: list[str] | None = None,
+    ) -> "tokenizer":
+        """Load a tokenizer from GPT-2-style serialized vocab and merges files.
+
+        vocab.json maps ``"<token_id>" -> "<remapped token string>"`` and
+        merges.txt has one ``"<token1> <token2>"`` pair per line, where tokens
+        are remapped with :func:`bytes_to_unicode` (so the space separator is
+        unambiguous).
+        """
+        byte_decoder = {v: k for k, v in bytes_to_unicode().items()}
+
+        def decode_token(remapped: str) -> bytes:
+            return bytes(byte_decoder[ch] for ch in remapped)
+
+        with open(vocab_path, encoding="utf-8") as f:
+            raw_vocab = json.load(f)
+        vocab = {int(idx): decode_token(token) for idx, token in raw_vocab.items()}
+
+        merges: list[tuple[bytes, bytes]] = []
+        with open(merges_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.rstrip("\n")
+                if not line:
+                    continue
+                token_1, token_2 = line.split(" ")
+                merges.append((decode_token(token_1), decode_token(token_2)))
+
+        return cls(vocab, merges, special_tokens)
 
     def _bpe_merge(self, token_bytes: list[bytes]) -> list[bytes]:
         while len(token_bytes) >= 2:

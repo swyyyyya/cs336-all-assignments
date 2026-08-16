@@ -9,6 +9,7 @@ from pathlib import Path
 import psutil
 
 from cs336_basics.train_bpe import train_bpe
+from cs336_basics.tokenizer import bytes_to_unicode
 
 ROOT = Path(__file__).resolve().parents[1]
 INPUT_PATH = ROOT / "data" / "TinyStoriesV2-GPT4-train.txt"
@@ -35,18 +36,27 @@ def main() -> None:
     elapsed = time.perf_counter() - t0
     peak_rss = max(peak_rss, process.memory_info().rss)
 
+    # Serialize in GPT-2 style: bytes are remapped to printable unicode
+    # strings (via bytes_to_unicode), so that space-separated merges.txt lines
+    # can be parsed back unambiguously. See tokenizer.from_files.
+    byte_encoder = bytes_to_unicode()
     vocab_path = OUT_DIR / "vocab.json"
     merges_path = OUT_DIR / "merges.txt"
     with vocab_path.open("w", encoding="utf-8") as f:
         json.dump(
-            {str(i): token.decode("latin-1") for i, token in vocab.items()},
+            {
+                str(i): "".join(byte_encoder[b] for b in token)
+                for i, token in vocab.items()
+            },
             f,
             ensure_ascii=False,
             indent=2,
         )
     with merges_path.open("w", encoding="utf-8") as f:
         for a, b in merges:
-            f.write(f"{a.decode('latin-1')} {b.decode('latin-1')}\n")
+            a_str = "".join(byte_encoder[x] for x in a)
+            b_str = "".join(byte_encoder[x] for x in b)
+            f.write(f"{a_str} {b_str}\n")
 
     longest = max(vocab.values(), key=len)
     print("==== summary ====", flush=True)
